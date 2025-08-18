@@ -1,0 +1,48 @@
+DB:
+user => id, full_name, age
+datas => id, user_id, sleep_time (array), action_time (array), agression (array), mood (array)
+
+Bot ishlashi:
+/start bosilganda avtomatik register bo'ladi va keyinchalik settings orqali ma'lumotlarni o'zgartirishi mumkin.
+bot har kuni soat 21:00 da reminder jo'natadi undan erta ma'lumotlarni qabul qilish mumkin emas agar user 21:00dan erta ma'lumotlarni jo'natsa qabul qilmaydi.
+ma'lumotlarni jo'natadi har birini o'ziga xos shkalalarda (1 dan 100gacha yoki 1dan 10gacha) va model ularni tahlil qiladi va kun haqida bir ikkita xulosalar beradi va ertangi kuni uchun maslahat.
+
+
+Monitoring time:
+
+user_monitoring_list da alohida arraylarda yig'iladi:
+
+[telegram_id, sleep_time, action_time, agression, mood]
+
+1. Kunlik umumiy uyqu vaqti va jismoniy harakatlar vaqti
+-> input orqali
+2. Agressiya darajasi
+-> [ Past ] [ O'rtacha ] [ Baland ]
+3. Kayfiyat darajasi
+-> [😡] [😐] [🙂] [😃] [🤩]
+
+Resultni jo'natish:
+Uyqu vaqti bo'yicha maslahat,
+Jismoniy mehnat bo'yicha,
+Agressiya asabiylikka,
+Kayfiyatga.
+Boshqa umumiy maslahatlar
+
+
+
+Maslahatlar qismi dataset bo'lmagani uchun oddiy if/else orqali qilinadi. Bot va userlardan yetarlicha namuna yig'ilgach ML model tayyorlanadi.
+
+
+
+"6632372434:AAFx3RVs66F7IZdJfVk7_NyZi15THnjblcg"
+
+user_monitoring_dict = {
+    12345678: {
+        "input_age": False,
+        "input_name": False,
+        "monitoring_time": False,
+        "data": [],       # sleep, action, agression, mood
+        "agression": None,
+        "mood": None
+    }
+}

@@ -1,8 +1,8 @@
-# Health Tracker Bot
+# Health Tracker Telegram Bot
 
 ## Overview
 
-A Telegram bot designed to track daily health metrics with AI-powered analysis and insights. The bot collects user data including sleep time, physical activity, aggression levels, and mood ratings, then provides personalized health recommendations based on pattern analysis. Features include user registration, daily data collection, automated reminders, and comprehensive health analytics.
+This is a comprehensive health tracking Telegram bot with a real-time monitoring dashboard. The application allows users to track various health metrics including weight, daily steps, water intake, exercise time, sleep duration, and mood through an interactive Telegram interface. The system features persistent data storage, customizable reminders, data export capabilities, and a web-based dashboard for monitoring bot status and user analytics. The application is specifically designed for deployment on Replit with 24/7 uptime capabilities.
 
 ## User Preferences
 
@@ -10,66 +10,59 @@ Preferred communication style: Simple, everyday language.
 
 ## System Architecture
 
-### Bot Framework
-- **aiogram**: Modern Telegram Bot API framework for Python with async support
-- **Finite State Machine (FSM)**: Memory-based state management for multi-step user interactions
-- **Router-based handlers**: Modular message handling system for different bot commands and states
+### Bot Framework and Communication
+- **Telegram Bot Integration**: Built using python-telegram-bot library for handling user interactions through Telegram's messaging platform
+- **Asynchronous Operations**: Utilizes asyncio for handling concurrent user requests and maintaining responsive bot performance
+- **Command-based Interface**: Implements structured command handlers for different health tracking functionalities (/weight, /steps, /water, etc.)
+- **Interactive Keyboards**: Provides quick access buttons and keyboard interfaces for improved user experience
 
-### Data Management
-- **SQLite Database**: Local file-based database (`HealtTracker.db`) for user and health data storage
-- **aiosqlite**: Async SQLite wrapper for non-blocking database operations
-- **Data Models**: Structured dataclasses for User and health data with serialization support
+### Data Persistence Layer
+- **SQLite Database**: Local database storage for user profiles and health records with proper schema design
+- **Database Abstraction**: Dedicated Database class handling all data operations with connection management and error handling
+- **Data Models**: Structured tables for users and health_records with proper relationships and indexing
+- **Context Management**: Safe database operations using connection context managers to prevent data corruption
 
-### Database Schema
-- **users table**: Stores user profile information (telegram_id, full_name, age, timestamps)
-- **health_data table**: Daily health metrics with foreign key relationship to users
-- **Unique constraints**: Prevents duplicate daily entries per user
+### Web Dashboard and Monitoring
+- **Flask Web Server**: Lightweight web interface for real-time bot status monitoring and analytics
+- **Health Check Endpoints**: RESTful API endpoints providing bot status, user counts, and recent activity metrics
+- **Bootstrap Frontend**: Responsive web dashboard with real-time updates and interactive charts
+- **Static Asset Management**: Organized CSS, JavaScript, and HTML files for the monitoring interface
 
-### Core Features
-- **User Registration**: Multi-step registration process collecting name and age
-- **Daily Data Collection**: Structured input flow for sleep, activity, aggression, and mood data
-- **Health Analysis**: Pattern recognition and correlation analysis using basic statistical methods
-- **Automated Scheduling**: Daily reminder system at configurable times
-- **Personalized Insights**: AI-powered recommendations based on historical data trends
+### Application Configuration
+- **Environment-based Config**: Centralized configuration management using environment variables for deployment flexibility
+- **Validation System**: Configuration validation with required and optional settings, including health tracking limits
+- **Timezone Support**: Configurable timezone settings for proper data recording and reminder scheduling
+- **Deployment Settings**: Webhook and keep-alive configurations optimized for Replit hosting
 
-### State Management
-- **Registration States**: `waiting_name`, `waiting_age` for user onboarding
-- **Data Input States**: `waiting_sleep`, `waiting_activity`, `waiting_aggression`, `waiting_mood`
-- **Temporary Storage**: In-memory storage for multi-step data collection processes
+### Error Handling and Logging
+- **Comprehensive Logging**: Multi-level logging system with file and console output for debugging and monitoring
+- **Graceful Error Recovery**: Robust error handling throughout the application to maintain bot availability
+- **User State Management**: Conversation state tracking for multi-step interactions and data entry flows
 
-### Analytics Engine
-- **Pattern Analysis**: Sleep, activity, mood, and aggression trend analysis
-- **Correlation Detection**: Cross-metric relationship identification
-- **Recommendation Generation**: Personalized health advice based on data patterns
-- **Minimum Data Requirements**: Configurable threshold for meaningful analysis
-
-### Scheduling System
-- **Asyncio-based Scheduler**: Non-blocking reminder system
-- **Daily Reminders**: Automated notifications for data collection
-- **Smart Reminders**: Conditional reminders that skip users who already submitted daily data
-- **Error Handling**: Graceful handling of blocked/deleted users
+### Keep-Alive and Deployment
+- **Replit Optimization**: Dedicated keep-alive server to maintain 24/7 uptime on Replit's platform
+- **Thread Management**: Separate threads for bot operations and web server to prevent blocking
+- **Health Monitoring**: Continuous status checking with automatic recovery mechanisms
 
 ## External Dependencies
 
-### Telegram Integration
-- **Telegram Bot API**: Primary interface for user interactions
-- **Bot Token**: Environment-based authentication for Telegram services
-- **Message Formatting**: Markdown support for rich text responses
+### Core Frameworks
+- **python-telegram-bot**: Primary library for Telegram Bot API integration and message handling
+- **Flask**: Lightweight web framework for the monitoring dashboard and health check endpoints
+- **SQLite3**: Built-in Python database engine for local data persistence
 
-### Development Environment
-- **Replit Deployment**: Optimized for continuous operation on Replit platform
-- **Environment Variables**: Secure token management through environment configuration
-- **Logging System**: Comprehensive logging with file and console output
+### Frontend Libraries
+- **Bootstrap 5.1.3**: CSS framework for responsive dashboard design and mobile compatibility
+- **Font Awesome 6.0.0**: Icon library for dashboard user interface elements
+- **Chart.js** (referenced): JavaScript charting library for health analytics visualization
 
-### Runtime Dependencies
-- **Python 3.7+**: Core runtime environment
-- **asyncio**: Asynchronous programming support
-- **numpy**: Statistical analysis for health data patterns
-- **pathlib**: Modern file path handling
-- **datetime**: Time-based operations and scheduling
+### Python Standard Library
+- **asyncio**: Asynchronous programming support for concurrent bot operations
+- **sqlite3**: Database connectivity and operations
+- **logging**: Application logging and debugging capabilities
+- **threading**: Multi-threaded execution for keep-alive functionality
+- **datetime**: Date and time handling for health record timestamps
 
-### Configuration Management
-- **Environment-based Configuration**: BOT_TOKEN from environment variables
-- **Configurable Parameters**: Reminder times, timezone settings, analysis thresholds
-- **Message Templates**: Centralized message content management
-- **Database Path Configuration**: Flexible database file location
+### Platform Integration
+- **Telegram Bot API**: External service for bot communication and user interaction
+- **Replit Platform**: Cloud hosting environment with specific keep-alive requirements and environment variable management

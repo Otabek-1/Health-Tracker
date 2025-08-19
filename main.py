@@ -1,20 +1,14 @@
-#!/usr/bin/env python3
 """
-Main entry point for Health Tracker Telegram Bot
-Optimized for Replit deployment with continuous operation
+Health Tracker Telegram Bot - Main Entry Point
+Designed for deployment on Replit with keep-alive functionality
 """
 
 import asyncio
 import logging
 import os
-import sys
-from datetime import datetime
-from aiohttp import web
-
-from bot import create_bot, dp
-from config import BOT_TOKEN, DATABASE_PATH
-from database import init_database
-from scheduler import start_scheduler
+from threading import Thread
+from keep_alive import keep_alive
+from bot import HealthTrackerBot
 
 # Configure logging
 logging.basicConfig(
@@ -22,62 +16,34 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
         logging.FileHandler('bot.log'),
-        logging.StreamHandler(sys.stdout)
+        logging.StreamHandler()
     ]
 )
 
 logger = logging.getLogger(__name__)
 
-# ---------- aiohttp /ping endpoint ----------
-async def ping(request):
-    return web.Response(text="pong")
-
-async def start_web_app():
-    app = web.Application()
-    app.router.add_get("/ping", ping)
-    runner = web.AppRunner(app)
-    await runner.setup()
-    site = web.TCPSite(runner, "0.0.0.0", 3000)  # Replit uchun port 3000
-    await site.start()
-    logger.info("Web server started at http://0.0.0.0:3000")
-
-async def run_bot():
-    """Main function to run the Health Tracker bot"""
+def main():
+    """Main function to start the bot with keep-alive functionality"""
     try:
-        logger.info("Starting Health Tracker Bot...")
+        # Start the keep-alive server in a separate thread
+        logger.info("Starting keep-alive server...")
+        keep_alive_thread = Thread(target=keep_alive)
+        keep_alive_thread.daemon = True
+        keep_alive_thread.start()
         
-        # Initialize database
-        await init_database()
-        logger.info("Database initialized successfully")
+        # Initialize and start the bot
+        logger.info("Initializing Health Tracker Bot...")
+        bot = HealthTrackerBot()
         
-        # Create bot instance
-        bot = create_bot()
+        # Run the bot
+        logger.info("Starting bot polling...")
+        bot.application.run_polling(drop_pending_updates=True)
         
-        # Start scheduler for daily reminders
-        await start_scheduler(bot)
-        logger.info("Scheduler started for daily reminders")
-        
-        # Start polling
-        logger.info("Bot is starting polling...")
-        await dp.start_polling(bot, skip_updates=True)
-        
-    except Exception as e:
-        logger.error(f"Error starting bot: {e}")
-        raise
-    finally:
-        logger.info("Bot stopped")
-
-async def main():
-    await asyncio.gather(
-        run_bot(),
-        start_web_app()
-    )
-
-if __name__ == "__main__":
-    try:
-        asyncio.run(main())
     except KeyboardInterrupt:
         logger.info("Bot stopped by user")
     except Exception as e:
-        logger.error(f"Fatal error: {e}")
-        sys.exit(1)
+        logger.error(f"Critical error: {e}")
+        raise
+
+if __name__ == "__main__":
+    main()

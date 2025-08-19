@@ -1,300 +1,610 @@
 """
-Bot message handlers for Health Tracker
+Message and command handlers for Health Tracker Bot
 """
 
 import logging
-from datetime import datetime, time, timedelta
-from aiogram import Router, F
-from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton
-from aiogram.filters import Command, StateFilter
-from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import State, StatesGroup
-
-from config import (
-    WELCOME_MESSAGE, START_MONITORING_MESSAGE, UserStates,
-    MOOD_SCALE, AGGRESSION_SCALE, REMINDER_TIME, DEFAULT_TIMEZONE_OFFSET
-)
-from database import (
-    create_user, get_user, save_health_data, 
-    check_today_data_exists, get_user_health_data
-)
-from ml_analysis import analyze_health_data, generate_recommendations
+import json
+from datetime import datetime, date
+from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
+from telegram.ext import ContextTypes
+from database import Database
 
 logger = logging.getLogger(__name__)
 
-class RegistrationStates(StatesGroup):
-    waiting_name = State()
-    waiting_age = State()
-
-class DataInputStates(StatesGroup):
-    waiting_sleep = State()
-    waiting_activity = State()
-    waiting_aggression = State()
-    waiting_mood = State()
-
-router = Router()
-
-# Temporary storage for user data during input
-user_temp_data = {}
-
-def create_mood_keyboard():
-    """Create keyboard for mood selection"""
-    keyboard = [
-        [KeyboardButton(text="😡"), KeyboardButton(text="😐"), KeyboardButton(text="🙂")],
-        [KeyboardButton(text="😃"), KeyboardButton(text="🤩")]
-    ]
-    return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True, one_time_keyboard=True)
-
-def create_aggression_keyboard():
-    """Create keyboard for aggression level selection"""
-    keyboard = [
-        [KeyboardButton(text="Past"), KeyboardButton(text="O'rtacha"), KeyboardButton(text="Baland")]
-    ]
-    return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True, one_time_keyboard=True)
-
-@router.message(Command("start"))
-async def start_command(message: Message, state: FSMContext):
-    """Handle /start command"""
-    user = await get_user(message.from_user.id)
+class HealthHandlers:
+    """Handler class for all bot commands and messages"""
     
-    if user:
-        await message.answer(
-            f"Salom {user['full_name']}! Siz allaqachon ro'yxatdan o'tgansiz.\n\n"
-            f"Bugungi ma'lumotlar uchun /today buyrug'ini ishlating."
+    def __init__(self, database: Database):
+        self.db = database
+        self.user_states = {}  # Track user conversation states
+    
+    async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /start command"""
+        user = update.effective_user
+        user_id = user.id
+        
+        # Register user in database
+        self.db.register_user(
+            user_id=user_id,
+            username=user.username,
+            first_name=user.first_name,
+            last_name=user.last_name
         )
-    else:
-        await message.answer(WELCOME_MESSAGE)
-        await state.set_state(RegistrationStates.waiting_name)
+        
+        welcome_text = f"""
+🏥 **Welcome to Health Tracker Bot!** 🏥
 
-@router.message(StateFilter(RegistrationStates.waiting_name))
-async def process_name(message: Message, state: FSMContext):
-    """Process user's name input"""
-    await state.update_data(name=message.text)
-    await message.answer("Yoshingizni kiriting (faqat raqam):")
-    await state.set_state(RegistrationStates.waiting_age)
+Hi {user.first_name}! I'm here to help you track your daily health metrics.
 
-@router.message(StateFilter(RegistrationStates.waiting_age))
-async def process_age(message: Message, state: FSMContext):
-    """Process user's age input"""
-    try:
-        age = int(message.text)
-        if age < 1 or age > 120:
-            await message.answer("Iltimos, to'g'ri yosh kiriting (1-120 oralig'ida):")
-            return
+**Available Commands:**
+📊 /stats - View your health statistics
+👤 /profile - Manage your profile
+⚖️ /weight - Log your weight
+👣 /steps - Log daily steps
+💧 /water - Log water intake
+🏃 /exercise - Log exercise time
+😴 /sleep - Log sleep hours
+😊 /mood - Log your mood
+🔔 /reminder - Set daily reminders
+📤 /export - Export your data
+❓ /help - Show detailed help
+
+Start tracking your health journey today! 🌟
+        """
         
-        data = await state.get_data()
-        name = data.get('name')
+        keyboard = [
+            [KeyboardButton("📊 Stats"), KeyboardButton("👤 Profile")],
+            [KeyboardButton("⚖️ Weight"), KeyboardButton("👣 Steps")],
+            [KeyboardButton("💧 Water"), KeyboardButton("🏃 Exercise")],
+            [KeyboardButton("❓ Help")]
+        ]
+        reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
         
-        # Create user in database
-        success = await create_user(message.from_user.id, name, age)
+        await update.message.reply_text(welcome_text, reply_markup=reply_markup, parse_mode='Markdown')
+    
+    async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /help command"""
+        help_text = """
+🔍 **Detailed Help Guide**
+
+**Health Tracking Commands:**
+⚖️ `/weight [value]` - Log weight (kg)
+   Example: /weight 70.5
+
+👣 `/steps [value]` - Log daily steps
+   Example: /steps 8500
+
+💧 `/water [value]` - Log water intake (ml)
+   Example: /water 2000
+
+🏃 `/exercise [minutes]` - Log exercise time
+   Example: /exercise 45
+
+😴 `/sleep [hours]` - Log sleep duration
+   Example: /sleep 8
+
+😊 `/mood [1-10]` - Rate your mood (1=sad, 10=happy)
+   Example: /mood 8
+
+**Data Management:**
+📊 `/stats` - View your statistics
+👤 `/profile` - Manage profile settings
+📤 `/export` - Export your data as CSV
+🔔 `/reminder` - Set daily reminders
+
+**Tips:**
+• You can use the keyboard buttons for quick access
+• Data is automatically saved with timestamp
+• Use /stats to track your progress over time
+• Set reminders to maintain consistency
+
+Need more help? Just type your question! 🤔
+        """
         
-        if success:
-            await message.answer(START_MONITORING_MESSAGE)
-            await state.clear()
+        await update.message.reply_text(help_text, parse_mode='Markdown')
+    
+    async def weight_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /weight command"""
+        user_id = update.effective_user.id
+        
+        if context.args:
+            try:
+                weight = float(context.args[0])
+                if 20 <= weight <= 500:  # Reasonable weight range
+                    success = self.db.record_health_data(
+                        user_id=user_id,
+                        record_type='weight',
+                        value=weight,
+                        unit='kg'
+                    )
+                    
+                    if success:
+                        await update.message.reply_text(
+                            f"✅ Weight recorded: {weight} kg\n"
+                            f"📅 Date: {date.today().strftime('%Y-%m-%d')}"
+                        )
+                    else:
+                        await update.message.reply_text("❌ Failed to record weight. Please try again.")
+                else:
+                    await update.message.reply_text("❌ Please enter a realistic weight between 20-500 kg")
+            except ValueError:
+                await update.message.reply_text("❌ Please enter a valid number for weight")
         else:
-            await message.answer("Xatolik yuz berdi. Qaytadan urinib ko'ring.")
-            await state.clear()
+            self.user_states[user_id] = 'waiting_weight'
+            await update.message.reply_text(
+                "⚖️ Please send your current weight in kg:\n"
+                "Example: 70.5"
+            )
     
-    except ValueError:
-        await message.answer("Iltimos, faqat raqam kiriting:")
-
-@router.message(Command("today"))
-async def today_command(message: Message, state: FSMContext):
-    """Handle /today command for data input"""
-    user = await get_user(message.from_user.id)
+    async def steps_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /steps command"""
+        user_id = update.effective_user.id
+        
+        if context.args:
+            try:
+                steps = int(context.args[0])
+                if 0 <= steps <= 100000:  # Reasonable steps range
+                    success = self.db.record_health_data(
+                        user_id=user_id,
+                        record_type='steps',
+                        value=steps,
+                        unit='steps'
+                    )
+                    
+                    if success:
+                        await update.message.reply_text(
+                            f"✅ Steps recorded: {steps:,} steps\n"
+                            f"📅 Date: {date.today().strftime('%Y-%m-%d')}"
+                        )
+                    else:
+                        await update.message.reply_text("❌ Failed to record steps. Please try again.")
+                else:
+                    await update.message.reply_text("❌ Please enter a realistic step count (0-100,000)")
+            except ValueError:
+                await update.message.reply_text("❌ Please enter a valid number for steps")
+        else:
+            self.user_states[user_id] = 'waiting_steps'
+            await update.message.reply_text(
+                "👣 Please send your daily step count:\n"
+                "Example: 8500"
+            )
     
-    if not user:
-        await message.answer("Avval ro'yxatdan o'ting. /start buyrug'ini ishlating.")
-        return
+    async def water_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /water command"""
+        user_id = update.effective_user.id
+        
+        if context.args:
+            try:
+                water = float(context.args[0])
+                if 0 <= water <= 10000:  # Reasonable water intake range
+                    success = self.db.record_health_data(
+                        user_id=user_id,
+                        record_type='water',
+                        value=water,
+                        unit='ml'
+                    )
+                    
+                    if success:
+                        await update.message.reply_text(
+                            f"✅ Water intake recorded: {water} ml\n"
+                            f"📅 Date: {date.today().strftime('%Y-%m-%d')}"
+                        )
+                    else:
+                        await update.message.reply_text("❌ Failed to record water intake. Please try again.")
+                else:
+                    await update.message.reply_text("❌ Please enter a realistic water amount (0-10,000 ml)")
+            except ValueError:
+                await update.message.reply_text("❌ Please enter a valid number for water intake")
+        else:
+            self.user_states[user_id] = 'waiting_water'
+            await update.message.reply_text(
+                "💧 Please send your water intake in ml:\n"
+                "Example: 2000"
+            )
     
-    # Get local time (UTC + user timezone offset)
-    utc_now = datetime.now()
-    local_time = utc_now + timedelta(hours=DEFAULT_TIMEZONE_OFFSET)
-    current_time = local_time.time()
-    reminder_time = time(21, 0)  # 21:00
-    today_date = local_time.strftime("%Y-%m-%d")
+    async def exercise_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /exercise command"""
+        user_id = update.effective_user.id
+        
+        if context.args:
+            try:
+                exercise = int(context.args[0])
+                if 0 <= exercise <= 1440:  # Max 24 hours
+                    success = self.db.record_health_data(
+                        user_id=user_id,
+                        record_type='exercise',
+                        value=exercise,
+                        unit='minutes'
+                    )
+                    
+                    if success:
+                        hours, minutes = divmod(exercise, 60)
+                        time_str = f"{hours}h {minutes}m" if hours else f"{minutes}m"
+                        await update.message.reply_text(
+                            f"✅ Exercise recorded: {time_str}\n"
+                            f"📅 Date: {date.today().strftime('%Y-%m-%d')}"
+                        )
+                    else:
+                        await update.message.reply_text("❌ Failed to record exercise. Please try again.")
+                else:
+                    await update.message.reply_text("❌ Please enter exercise time between 0-1440 minutes")
+            except ValueError:
+                await update.message.reply_text("❌ Please enter a valid number for exercise minutes")
+        else:
+            self.user_states[user_id] = 'waiting_exercise'
+            await update.message.reply_text(
+                "🏃 Please send your exercise time in minutes:\n"
+                "Example: 45"
+            )
     
-    # Allow data input only after 21:00 local time
-    if current_time < reminder_time:
-        await message.answer(
-            f"Ma'lumotlarni faqat soat {REMINDER_TIME} dan keyin kiritish mumkin. "
-            f"Hozir mahalliy vaqt bo'yicha soat {current_time.strftime('%H:%M')}"
-        )
-        return
+    async def sleep_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /sleep command"""
+        user_id = update.effective_user.id
+        
+        if context.args:
+            try:
+                sleep = float(context.args[0])
+                if 0 <= sleep <= 24:  # Reasonable sleep range
+                    success = self.db.record_health_data(
+                        user_id=user_id,
+                        record_type='sleep',
+                        value=sleep,
+                        unit='hours'
+                    )
+                    
+                    if success:
+                        await update.message.reply_text(
+                            f"✅ Sleep recorded: {sleep} hours\n"
+                            f"📅 Date: {date.today().strftime('%Y-%m-%d')}"
+                        )
+                    else:
+                        await update.message.reply_text("❌ Failed to record sleep. Please try again.")
+                else:
+                    await update.message.reply_text("❌ Please enter sleep hours between 0-24")
+            except ValueError:
+                await update.message.reply_text("❌ Please enter a valid number for sleep hours")
+        else:
+            self.user_states[user_id] = 'waiting_sleep'
+            await update.message.reply_text(
+                "😴 Please send your sleep duration in hours:\n"
+                "Example: 8"
+            )
     
-    # Check if data already exists for today
-    data_exists = await check_today_data_exists(user['id'], today_date)
-    if data_exists:
-        await message.answer("Siz bugun allaqachon ma'lumot kiritgansiz!")
-        return
+    async def mood_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /mood command"""
+        user_id = update.effective_user.id
+        
+        if context.args:
+            try:
+                mood = int(context.args[0])
+                if 1 <= mood <= 10:
+                    success = self.db.record_health_data(
+                        user_id=user_id,
+                        record_type='mood',
+                        value=mood,
+                        unit='scale'
+                    )
+                    
+                    if success:
+                        mood_emoji = "😢" if mood <= 3 else "😐" if mood <= 6 else "😊"
+                        await update.message.reply_text(
+                            f"✅ Mood recorded: {mood}/10 {mood_emoji}\n"
+                            f"📅 Date: {date.today().strftime('%Y-%m-%d')}"
+                        )
+                    else:
+                        await update.message.reply_text("❌ Failed to record mood. Please try again.")
+                else:
+                    await update.message.reply_text("❌ Please rate your mood from 1 to 10")
+            except ValueError:
+                await update.message.reply_text("❌ Please enter a valid number from 1 to 10")
+        else:
+            self.user_states[user_id] = 'waiting_mood'
+            keyboard = [
+                [KeyboardButton("1😢"), KeyboardButton("2"), KeyboardButton("3")],
+                [KeyboardButton("4"), KeyboardButton("5😐"), KeyboardButton("6")],
+                [KeyboardButton("7"), KeyboardButton("8😊"), KeyboardButton("9")],
+                [KeyboardButton("10🎉")]
+            ]
+            reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
+            await update.message.reply_text(
+                "😊 Please rate your mood from 1 (sad) to 10 (happy):",
+                reply_markup=reply_markup
+            )
     
-    # Initialize temporary data storage
-    user_temp_data[message.from_user.id] = {"user_id": user['id'], "date": today_date}
-    
-    await message.answer("Bugun necha soat uxladingiz? (masalan: 7.5)")
-    await state.set_state(DataInputStates.waiting_sleep)
-
-@router.message(StateFilter(DataInputStates.waiting_sleep))
-async def process_sleep_time(message: Message, state: FSMContext):
-    """Process sleep time input"""
-    try:
-        sleep_time = float(message.text)
-        if sleep_time < 0 or sleep_time > 24:
-            await message.answer("Iltimos, to'g'ri uyqu vaqtini kiriting (0-24 soat):")
+    async def stats_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /stats command"""
+        user_id = update.effective_user.id
+        
+        # Get statistics for last 30 days
+        stats = self.db.get_stats(user_id, days=30)
+        
+        if not stats or stats.get('total_records', 0) == 0:
+            await update.message.reply_text(
+                "📊 No health data found!\n\n"
+                "Start tracking your health with commands like:\n"
+                "⚖️ /weight\n👣 /steps\n💧 /water\n🏃 /exercise"
+            )
             return
         
-        user_temp_data[message.from_user.id]['sleep_time'] = sleep_time
-        await message.answer("Bugun jami necha soat jismoniy mashq qildingiz? (masalan: 1.5)")
-        await state.set_state(DataInputStates.waiting_activity)
+        # Format statistics message
+        stats_text = f"📊 **Your Health Statistics (Last 30 days)**\n\n"
+        
+        for record_type, data in stats.items():
+            if record_type in ['total_records', 'days_period']:
+                continue
+                
+            icon = {
+                'weight': '⚖️',
+                'steps': '👣',
+                'water': '💧',
+                'exercise': '🏃',
+                'sleep': '😴',
+                'mood': '😊'
+            }.get(record_type, '📝')
+            
+            unit = {
+                'weight': 'kg',
+                'steps': 'steps',
+                'water': 'ml',
+                'exercise': 'min',
+                'sleep': 'hours',
+                'mood': '/10'
+            }.get(record_type, '')
+            
+            stats_text += f"{icon} **{record_type.title()}**: {data['count']} entries, avg {data['average']} {unit}\n"
+        
+        stats_text += f"\n📈 Total records: {stats['total_records']}"
+        
+        # Get today's summary
+        today_summary = self.db.get_daily_summary(user_id)
+        if today_summary:
+            stats_text += "\n\n**Today's Data:**\n"
+            for record_type, data in today_summary.items():
+                icon = {
+                    'weight': '⚖️',
+                    'steps': '👣',
+                    'water': '💧',
+                    'exercise': '🏃',
+                    'sleep': '😴',
+                    'mood': '😊'
+                }.get(record_type, '📝')
+                
+                stats_text += f"{icon} {data['value']} {data['unit'] or ''}\n"
+        
+        await update.message.reply_text(stats_text, parse_mode='Markdown')
     
-    except ValueError:
-        await message.answer("Iltimos, to'g'ri format kiriting (masalan: 7.5):")
-
-@router.message(StateFilter(DataInputStates.waiting_activity))
-async def process_activity_time(message: Message, state: FSMContext):
-    """Process activity time input"""
-    try:
-        activity_time = float(message.text)
-        if activity_time < 0 or activity_time > 24:
-            await message.answer("Iltimos, to'g'ri vaqt kiriting (0-24 soat):")
+    async def profile_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /profile command"""
+        user_id = update.effective_user.id
+        user = update.effective_user
+        
+        # Get user preferences
+        prefs = self.db.get_user_preferences(user_id)
+        
+        profile_text = f"👤 **Profile: {user.first_name}**\n\n"
+        profile_text += f"🆔 User ID: {user_id}\n"
+        profile_text += f"👥 Username: @{user.username or 'Not set'}\n"
+        profile_text += f"🔔 Reminders: {'Enabled' if prefs.get('reminder_enabled', True) else 'Disabled'}\n"
+        profile_text += f"⏰ Reminder time: {prefs.get('reminder_time', '20:00')}\n"
+        profile_text += f"⚖️ Weight unit: {prefs.get('weight_unit', 'kg')}\n"
+        
+        if prefs.get('height_cm'):
+            profile_text += f"📏 Height: {prefs['height_cm']} cm\n"
+        if prefs.get('age'):
+            profile_text += f"🎂 Age: {prefs['age']} years\n"
+        if prefs.get('gender'):
+            profile_text += f"👤 Gender: {prefs['gender']}\n"
+        
+        keyboard = [
+            [KeyboardButton("Set Height"), KeyboardButton("Set Age")],
+            [KeyboardButton("Toggle Reminders"), KeyboardButton("Set Reminder Time")]
+        ]
+        reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
+        
+        await update.message.reply_text(profile_text, reply_markup=reply_markup, parse_mode='Markdown')
+    
+    async def reminder_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /reminder command"""
+        user_id = update.effective_user.id
+        
+        if context.args:
+            time_str = context.args[0]
+            try:
+                # Validate time format (HH:MM)
+                datetime.strptime(time_str, '%H:%M')
+                
+                success = self.db.update_user_preferences(
+                    user_id=user_id,
+                    reminder_time=time_str,
+                    reminder_enabled=True
+                )
+                
+                if success:
+                    await update.message.reply_text(
+                        f"✅ Daily reminder set for {time_str}\n"
+                        "You'll receive a daily health tracking reminder at this time."
+                    )
+                else:
+                    await update.message.reply_text("❌ Failed to set reminder. Please try again.")
+            except ValueError:
+                await update.message.reply_text("❌ Please use HH:MM format (24-hour)\nExample: /reminder 20:00")
+        else:
+            await update.message.reply_text(
+                "🔔 **Daily Reminder Setup**\n\n"
+                "Send your preferred reminder time in HH:MM format (24-hour)\n"
+                "Example: /reminder 20:00 (8:00 PM)\n\n"
+                "Or use buttons below:",
+                reply_markup=ReplyKeyboardMarkup([
+                    [KeyboardButton("08:00"), KeyboardButton("12:00")],
+                    [KeyboardButton("18:00"), KeyboardButton("20:00")],
+                    [KeyboardButton("Disable Reminders")]
+                ], resize_keyboard=True, one_time_keyboard=True)
+            )
+    
+    async def export_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /export command"""
+        user_id = update.effective_user.id
+        
+        # Get all user records
+        records = self.db.get_user_records(user_id, days=365)  # Last year
+        
+        if not records:
+            await update.message.reply_text(
+                "📤 No data to export!\n\n"
+                "Start tracking your health first, then you can export your data."
+            )
             return
         
-        user_temp_data[message.from_user.id]['activity_time'] = activity_time
-        await message.answer(
-            "Bugungi agressiya darajangizni tanlang:",
-            reply_markup=create_aggression_keyboard()
+        # Create CSV content
+        csv_content = "Date,Type,Value,Unit,Notes,Recorded At\n"
+        
+        for record in records:
+            csv_content += f"{record['date_for']},{record['record_type']},{record['value']},"
+            csv_content += f"{record['unit'] or ''},{record['notes'] or ''},{record['recorded_at']}\n"
+        
+        # Send as document
+        from io import BytesIO
+        csv_file = BytesIO(csv_content.encode('utf-8'))
+        csv_file.name = f"health_data_{user_id}_{date.today().strftime('%Y%m%d')}.csv"
+        
+        await update.message.reply_document(
+            document=csv_file,
+            caption=f"📤 Your health data export\n📅 Records: {len(records)}\n🗓️ Generated: {date.today()}"
         )
-        await state.set_state(DataInputStates.waiting_aggression)
     
-    except ValueError:
-        await message.answer("Iltimos, to'g'ri format kiriting (masalan: 1.5):")
-
-@router.message(StateFilter(DataInputStates.waiting_aggression))
-async def process_aggression(message: Message, state: FSMContext):
-    """Process aggression level input"""
-    if message.text not in AGGRESSION_SCALE:
-        await message.answer(
-            "Iltimos, tugmalardan birini tanlang:",
-            reply_markup=create_aggression_keyboard()
-        )
-        return
-    
-    user_temp_data[message.from_user.id]['aggression_level'] = AGGRESSION_SCALE[message.text]
-    await message.answer(
-        "Bugungi kayfiyatingizni tanlang:",
-        reply_markup=create_mood_keyboard()
-    )
-    await state.set_state(DataInputStates.waiting_mood)
-
-@router.message(StateFilter(DataInputStates.waiting_mood))
-async def process_mood(message: Message, state: FSMContext):
-    """Process mood level input and complete data collection"""
-    if message.text not in MOOD_SCALE:
-        await message.answer(
-            "Iltimos, tugmalardan birini tanlang:",
-            reply_markup=create_mood_keyboard()
-        )
-        return
-    
-    user_data = user_temp_data.get(message.from_user.id)
-    if not user_data:
-        await message.answer("Xatolik yuz berdi. Qaytadan /today buyrug'ini ishlating.")
-        await state.clear()
-        return
-    
-    user_data['mood_level'] = MOOD_SCALE[message.text]
-    
-    # Save data to database
-    success = await save_health_data(
-        user_data['user_id'],
-        user_data['date'],
-        user_data['sleep_time'],
-        user_data['activity_time'],
-        user_data['aggression_level'],
-        user_data['mood_level']
-    )
-    
-    if success:
-        await message.answer("✅ Ma'lumotlar saqlandi! Tahlil qilinmoqda...")
+    async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle text messages based on user state"""
+        user_id = update.effective_user.id
+        text = update.message.text.strip()
         
-        # Get user's recent data for analysis
-        recent_data = await get_user_health_data(user_data['user_id'], 30)
+        # Handle keyboard button presses
+        if text in ["📊 Stats", "Stats"]:
+            await self.stats_command(update, context)
+            return
+        elif text in ["👤 Profile", "Profile"]:
+            await self.profile_command(update, context)
+            return
+        elif text in ["❓ Help", "Help"]:
+            await self.help_command(update, context)
+            return
+        elif text in ["⚖️ Weight", "Weight"]:
+            await self.weight_command(update, context)
+            return
+        elif text in ["👣 Steps", "Steps"]:
+            await self.steps_command(update, context)
+            return
+        elif text in ["💧 Water", "Water"]:
+            await self.water_command(update, context)
+            return
+        elif text in ["🏃 Exercise", "Exercise"]:
+            await self.exercise_command(update, context)
+            return
         
-        # Generate analysis and recommendations
-        analysis = await analyze_health_data(recent_data)
-        recommendations = await generate_recommendations(recent_data, user_data)
+        # Handle state-based input
+        if user_id not in self.user_states:
+            await update.message.reply_text(
+                "I didn't understand that. Use /help to see available commands or use the keyboard buttons below."
+            )
+            return
         
-        # Send analysis results
-        response = "📊 **Bugungi tahlil:**\n\n"
-        response += analysis + "\n\n"
-        response += "💡 **Tavsiyalar:**\n\n" 
-        response += recommendations
+        state = self.user_states[user_id]
         
-        await message.answer(response, parse_mode="Markdown")
-    else:
-        await message.answer("❌ Ma'lumotlarni saqlashda xatolik yuz berdi.")
-    
-    # Clean up
-    if message.from_user.id in user_temp_data:
-        del user_temp_data[message.from_user.id]
-    await state.clear()
-
-@router.message(Command("stats"))
-async def stats_command(message: Message):
-    """Show user statistics"""
-    user = await get_user(message.from_user.id)
-    
-    if not user:
-        await message.answer("Avval ro'yxatdan o'ting. /start buyrug'ini ishlating.")
-        return
-    
-    recent_data = await get_user_health_data(user['id'], 7)
-    
-    if not recent_data:
-        await message.answer("Hali ma'lumotlar yo'q. /today buyrug'i bilan ma'lumot kiriting.")
-        return
-    
-    # Calculate averages
-    avg_sleep = sum(d['sleep_time'] for d in recent_data) / len(recent_data)
-    avg_activity = sum(d['activity_time'] for d in recent_data) / len(recent_data)
-    avg_mood = sum(d['mood_level'] for d in recent_data) / len(recent_data)
-    avg_aggression = sum(d['aggression_level'] for d in recent_data) / len(recent_data)
-    
-    stats_message = f"""
-📈 **So'nggi {len(recent_data)} kunlik statistika:**
-
-🛏 O'rtacha uyqu: {avg_sleep:.1f} soat
-🏃‍♂️ O'rtacha faollik: {avg_activity:.1f} soat  
-😊 O'rtacha kayfiyat: {avg_mood:.1f}/5
-😤 O'rtacha agressiya: {avg_aggression:.1f}/3
-
-Jami kirdirilgan kunlar: {len(recent_data)}
-"""
-    
-    await message.answer(stats_message, parse_mode="Markdown")
-
-@router.message(Command("help"))
-async def help_command(message: Message):
-    """Show help information"""
-    help_text = """
-🤖 **HealthTracker Bot yordam**
-
-**Buyruqlar:**
-/start - Botni ishga tushirish va ro'yxatdan o'tish
-/today - Bugungi ma'lumotlarni kiritish (21:00 dan keyin)
-/stats - So'nggi 7 kunlik statistika
-/help - Bu yordam xabari
-
-**Bot qanday ishlaydi:**
-1. Har kuni soat 21:00 da eslatma yuboramiz
-2. Siz 4 ta ma'lumot kiritasiz: uyqu, faollik, agressiya, kayfiyat
-3. Bot AI yordamida tahlil qiladi va maslahat beradi
-
-**Texnik yordam:** @YourSupportUsername
-    """
-    await message.answer(help_text, parse_mode="Markdown")
-
-def register_handlers(dp):
-    """Register all handlers with the dispatcher"""
-    dp.include_router(router)
-    logger.info("All handlers registered successfully")
+        try:
+            if state == 'waiting_weight':
+                weight = float(text)
+                if 20 <= weight <= 500:
+                    success = self.db.record_health_data(user_id, 'weight', weight, 'kg')
+                    if success:
+                        await update.message.reply_text(f"✅ Weight recorded: {weight} kg")
+                    else:
+                        await update.message.reply_text("❌ Failed to record weight")
+                else:
+                    await update.message.reply_text("❌ Please enter a weight between 20-500 kg")
+                    return
+                
+            elif state == 'waiting_steps':
+                steps = int(text)
+                if 0 <= steps <= 100000:
+                    success = self.db.record_health_data(user_id, 'steps', steps, 'steps')
+                    if success:
+                        await update.message.reply_text(f"✅ Steps recorded: {steps:,}")
+                    else:
+                        await update.message.reply_text("❌ Failed to record steps")
+                else:
+                    await update.message.reply_text("❌ Please enter steps between 0-100,000")
+                    return
+                
+            elif state == 'waiting_water':
+                water = float(text)
+                if 0 <= water <= 10000:
+                    success = self.db.record_health_data(user_id, 'water', water, 'ml')
+                    if success:
+                        await update.message.reply_text(f"✅ Water intake recorded: {water} ml")
+                    else:
+                        await update.message.reply_text("❌ Failed to record water intake")
+                else:
+                    await update.message.reply_text("❌ Please enter water amount between 0-10,000 ml")
+                    return
+                
+            elif state == 'waiting_exercise':
+                exercise = int(text)
+                if 0 <= exercise <= 1440:
+                    success = self.db.record_health_data(user_id, 'exercise', exercise, 'minutes')
+                    if success:
+                        hours, minutes = divmod(exercise, 60)
+                        time_str = f"{hours}h {minutes}m" if hours else f"{minutes}m"
+                        await update.message.reply_text(f"✅ Exercise recorded: {time_str}")
+                    else:
+                        await update.message.reply_text("❌ Failed to record exercise")
+                else:
+                    await update.message.reply_text("❌ Please enter exercise time between 0-1440 minutes")
+                    return
+                
+            elif state == 'waiting_sleep':
+                sleep = float(text)
+                if 0 <= sleep <= 24:
+                    success = self.db.record_health_data(user_id, 'sleep', sleep, 'hours')
+                    if success:
+                        await update.message.reply_text(f"✅ Sleep recorded: {sleep} hours")
+                    else:
+                        await update.message.reply_text("❌ Failed to record sleep")
+                else:
+                    await update.message.reply_text("❌ Please enter sleep hours between 0-24")
+                    return
+                
+            elif state == 'waiting_mood':
+                # Handle both number and emoji button format
+                if text.startswith(('1', '2', '3', '4', '5', '6', '7', '8', '9')) and text[0].isdigit():
+                    mood = int(text[0])
+                else:
+                    mood = int(text)
+                
+                if 1 <= mood <= 10:
+                    success = self.db.record_health_data(user_id, 'mood', mood, 'scale')
+                    if success:
+                        mood_emoji = "😢" if mood <= 3 else "😐" if mood <= 6 else "😊"
+                        await update.message.reply_text(f"✅ Mood recorded: {mood}/10 {mood_emoji}")
+                    else:
+                        await update.message.reply_text("❌ Failed to record mood")
+                else:
+                    await update.message.reply_text("❌ Please rate your mood from 1 to 10")
+                    return
+            
+            # Clear state after successful input
+            del self.user_states[user_id]
+            
+            # Show main keyboard
+            keyboard = [
+                [KeyboardButton("📊 Stats"), KeyboardButton("👤 Profile")],
+                [KeyboardButton("⚖️ Weight"), KeyboardButton("👣 Steps")],
+                [KeyboardButton("💧 Water"), KeyboardButton("🏃 Exercise")],
+                [KeyboardButton("❓ Help")]
+            ]
+            reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+            await update.message.reply_text("What would you like to track next?", reply_markup=reply_markup)
+            
+        except ValueError:
+            await update.message.reply_text("❌ Please enter a valid number")
+        except Exception as e:
+            logger.error(f"Error handling message: {e}")
+            await update.message.reply_text("❌ An error occurred. Please try again.")

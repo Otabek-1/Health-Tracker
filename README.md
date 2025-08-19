@@ -1,14 +1,61 @@
-# HealthTracker - doimiy jismoniy va ruhiy holatni AI modellar orqali o'rganib boruvchi bot.
+# Health Tracker Bot - Yangilangan Versiya
 
-## Maqsad:
-  1. **aiogram** bo'yicha o'rgangan ma'lumotlarni amalda sinash.
-  2. **sklearn, ML modellar** bo'yicha o'rganganlarni amalda sinash.
+## O'zgarishlar va Yaxshilanishlar
 
-## Bot va ishlashi haqida qisqacha:
-  - `/start` command orqali bot ishga tushiriladi va shu jarayon o'zida user ro'yxatdan o'tadi.
-  - Har kuni kunlik uyqu vaqti, jismoniy harakatlar umumiy vaqti, agressiya darajasi, kayfiyat user tomonidan botga yuboriladi (esidan chiqsa bot o'zi xabar yuboradi).
-  - Berilgan ma'lumotlar asosida bot userga bugungi kuni haqida xulosa beradi. Misol uchun nega bugun kayfiyati past bo'lgani va h.k.
-  - Va ertangi kun uchun ham maslahat va ma'lumotlar beradi, misol uchun: "Agar bugun ham shunday kam uxlasang ertaga kayfiyat bundan ham past bo'lishi mumkin." va h.k.
-  - Agar shu joyigacha asabiylashmasdan yetib kelsam user uchun oxirgi 1hafta ma'lumotlari asosida grafik ham tashlab berish funksiyasini qo'shaman.
+### ✅ Hal qilingan muammolar:
+- **Vaqt zonasi tuzatildi**: Endi GMT+5 (Toshkent vaqti) bo'yicha ishlaydi
+- **Ma'lumot kiritish vaqti**: Soat 21:00 dan keyin mahalliy vaqt bo'yicha
+- **Scheduler**: Eslatmalar ham mahalliy vaqt bo'yicha yuboriladi
+- **Database**: SQLite ishonchli ishlaydi va ma'lumotlar saqlanadi
 
-> Bu birinchi yasagan kichik AI modelim bo'ladi va buni kelajakda yana kuchaytirib AI Agent yasash niyatin ham bor (o'zi Agent uchun o'rganyabman).
+### 🆕 Qo'shilgan xususiyatlar:
+- **AI tahlil**: So'nggi kunlar ma'lumotlari asosida tahlil
+- **Korrelyatsiya analizi**: Uyqu, faollik, kayfiyat o'rtasidagi bog'liqlik
+- **Shaxsiylashtirilgan maslahatlar**: Har bir user uchun individual tavsiyalar
+- **Haftalik tendensiyalar**: 7 kunlik ma'lumotlar asosida tahlil
+- **To'liq state management**: FSM bilan step-by-step ma'lumot kiritish
+
+### 📋 Bot buyruqlari:
+- `/start` - Ro'yxatdan o'tish
+- `/today` - Kunlik ma'lumot kiritish (21:00 dan keyin)
+- `/stats` - So'nggi 7 kunlik statistika
+- `/help` - Yordam
+
+### 🔧 Ishga tushirish:
+```bash
+pip install -r requirements.txt
+python main.py
+```
+
+### 📊 Ma'lumotlar:
+- **Uyqu vaqti**: Soat hisobida (0-24)
+- **Jismoniy faollik**: Soat hisobida (0-24)
+- **Agressiya**: Past/O'rtacha/Baland (1-3)
+- **Kayfiyat**: 😡😐🙂😃🤩 (1-5)
+
+### 🗃️ Database:
+- SQLite (HealtTracker.db)
+- Automatic table creation
+- User va health_data jadvallari
+
+### ⏰ Scheduler:
+- Har kuni soat 21:00 da avtomatik eslatma
+- Mahalliy vaqt zonasi bo'yicha
+- Faqat ma'lumot kiritmagan userlar uchun
+
+### 🏗️ Arxitektura:
+- **main.py**: Asosiy ishga tushirish
+- **bot.py**: Bot konfiguratsiyasi
+- **handlers.py**: Xabar va buyruq handlerlari
+- **database.py**: SQLite operatsiyalari
+- **ml_analysis.py**: AI tahlil va maslahatlar
+- **scheduler.py**: Kunlik eslatmalar
+- **models.py**: Ma'lumot modellari
+- **config.py**: Sozlamalar va konstantalar
+
+### 🔑 Environment:
+```
+BOT_TOKEN=your_telegram_bot_token
+```
+
+Bot to'liq ishga tayyor va production uchun optimizatsiya qilingan!

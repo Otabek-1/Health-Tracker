@@ -9,6 +9,7 @@ import logging
 import os
 import sys
 from datetime import datetime
+from aiohttp import web
 
 from bot import create_bot, dp
 from config import BOT_TOKEN, DATABASE_PATH
@@ -27,7 +28,20 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
-async def main():
+# ---------- aiohttp /ping endpoint ----------
+async def ping(request):
+    return web.Response(text="pong")
+
+async def start_web_app():
+    app = web.Application()
+    app.router.add_get("/ping", ping)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, "0.0.0.0", 3000)  # Replit uchun port 3000
+    await site.start()
+    logger.info("Web server started at http://0.0.0.0:3000")
+
+async def run_bot():
     """Main function to run the Health Tracker bot"""
     try:
         logger.info("Starting Health Tracker Bot...")
@@ -52,6 +66,12 @@ async def main():
         raise
     finally:
         logger.info("Bot stopped")
+
+async def main():
+    await asyncio.gather(
+        run_bot(),
+        start_web_app()
+    )
 
 if __name__ == "__main__":
     try:
